@@ -1,45 +1,49 @@
-# EletroSim — site
+# Página do EletroSim
 
-Landing page do EletroSim com download do APK. HTML/CSS puro, sem build.
+Página estática de apresentação e download do APK.
 
-## Estrutura
+## Arquivos
 
 ```
-index.html            pagina completa
-eletrosim.apk         APK servido no botao de download
-assets/               capturas usadas no mockup
-vercel.json           cabecalhos e Content-Type do APK
-publicar.ps1          atualiza o APK e publica
+site/
+  index.html            página completa (HTML + CSS, sem dependências externas)
+  eletrosim.apk         APK para download (NÃO versionado no git)
+  assets/
+    tela-projetos.png   captura usada no mockup de celular
 ```
 
-## Publicar uma nova versao do APK
+O `index.html` referencia o APK por caminho relativo (`eletrosim.apk`), então os dois
+precisam ficar na mesma pasta ao publicar. O atributo `download="EletroSim-1.0.apk"`
+define o nome do arquivo salvo no celular.
 
-No repositorio do app:
+## Testar no computador
 
 ```powershell
-.\publicar-site.ps1
-```
-
-O script:
-
-1. pega `app/build/outputs/apk/debug/app-debug.apk` (ou o caminho em `-ApkPath`);
-2. copia para `eletrosim.apk`;
-3. atualiza o tamanho em MB no `index.html`;
-4. sincroniza esta pasta com o clone local do repositorio do site;
-5. faz commit e push, o que dispara o deploy automatico no Vercel.
-
-## Rodar localmente
-
-```powershell
+cd eletrosim/site
 python -m http.server 8099
 ```
 
 Abra `http://localhost:8099`.
 
-## Deploy manual
+## Testar no celular (mesma rede Wi-Fi)
+
+Descubra o IP da máquina com `ipconfig` e abra `http://SEU_IP:8099` no navegador do
+celular. Se não abrir, libere a porta 8099 no Firewall do Windows.
+
+## Publicar
+
+Qualquer hospedagem estática serve. Envie a pasta `site` inteira (HTML, `assets` e o
+APK juntos):
+
+- **Netlify Drop:** arraste a pasta em app.netlify.com/drop
+- **Vercel:** `vercel deploy site`
+- **GitHub Pages:** copie o conteúdo para a branch `gh-pages`
+- **Hospedagem própria:** envie por FTP para a raiz ou uma subpasta
+
+Depois de publicar, troque o link de download se quiser apontar para outro domínio.
+
+## Atualizar o APK
 
 ```powershell
-vercel --prod
+Copy-Item eletrosim/EletroSim-debug.apk eletrosim/site/eletrosim.apk -Force
 ```
-
-Projeto Vercel: `eletrosim`. Repositorio: `agenciawebnanet/eletrosim`.
