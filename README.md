@@ -2,8 +2,9 @@
 
 Landing page com download do APK, publicada no Vercel.
 
-- Site: https://consumo-consciente.vercel.app
-- APK: https://consumo-consciente.vercel.app/consumo-consciente.apk
+- Site: https://consumo-consciente-app.vercel.app
+- APK: https://consumo-consciente-app.vercel.app/consumo-consciente.apk
+- Link antigo (continua funcionando): https://eletrosim.vercel.app
 - Repositório do site: https://github.com/agenciawebnanet/eletrosim
 - Projeto Vercel: `eletrosim` (root directory `.`, deploy automático a cada push)
 
