@@ -51,6 +51,18 @@
   const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const norm = (v) => String(v ?? "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
 
+  const icon = (name, cls = "mi") =>
+    `<svg class="${cls}" aria-hidden="true"><use href="assets/icons.svg#${name}"></use></svg>`;
+
+  const ENV_ICONS = ["meeting_room", "bed", "weekend", "kitchen", "bathtub", "local_laundry_service",
+    "directions_car", "factory", "storefront", "agriculture", "construction", "business_center"];
+  const ENV_EMOJI = {
+    "🏠": "meeting_room", "🛏️": "bed", "🛋️": "weekend", "🍳": "kitchen", "🚿": "bathtub",
+    "🧺": "local_laundry_service", "🚗": "directions_car", "🏭": "factory", "🏪": "storefront",
+    "🌾": "agriculture", "🛠️": "construction", "🏢": "business_center", "💡": "lightbulb", "📺": "tv"
+  };
+  const envIcon = (env) => ENV_ICONS.includes(env.icon) ? env.icon : (ENV_EMOJI[env.icon] || "meeting_room");
+
   function fmtDuration(minutes) {
     const total = Math.max(0, Math.min(1440, minutes || 0));
     const h = Math.floor(total / 60);
@@ -91,6 +103,12 @@
   function ensureProjectShape(p) {
     p.environments = Array.isArray(p.environments) ? p.environments : [];
     p.equipments = Array.isArray(p.equipments) ? p.equipments : [];
+    p.environments.forEach((env) => {
+      if (!ENV_ICONS.includes(env.icon)) env.icon = ENV_EMOJI[env.icon] || "meeting_room";
+    });
+    p.equipments.forEach((eq) => {
+      if (Array.isArray(eq.weeklyMinutes) && eq.weeklyMinutes.length !== 7) delete eq.weeklyMinutes;
+    });
     return p;
   }
 
@@ -109,6 +127,13 @@
   // ---------------------------------------------------------------- calculos
   function monthlyKwh(eq) {
     if (eq.monthlyKwh != null) return eq.monthlyKwh * (eq.qty || 1);
+    const weekly = Array.isArray(eq.weeklyMinutes) && eq.weeklyMinutes.length === 7 ? eq.weeklyMinutes : null;
+    if (weekly) {
+      const total = weekly.reduce((a, b) => a + (Number(b) || 0), 0);
+      if (total > 0) {
+        return (eq.powerW / 1000) * (total / 60) * ((eq.days || 30) / 7) * (eq.qty || 1);
+      }
+    }
     const hours = eq.hours || 0;
     return (eq.powerW / 1000) * (eq.qty || 1) * hours * (eq.days || 30) * (eq.factor ?? 1);
   }
@@ -245,7 +270,7 @@
     return `
       <div class="card hero center">
         <div class="empty">
-          <div class="circle">⚡</div>
+          <div class="circle">${icon("bolt")}</div>
           <h2>Bem-vindo</h2>
           <p>Cadastre sua instalação para calcular o consumo e o custo dos seus aparelhos.</p>
         </div>
@@ -293,10 +318,10 @@
       </div>
 
       <div class="tiles">
-        <div class="tile"><div class="icon">⚡</div><div class="value">${num2.format(t.kwh)} kWh</div><div class="label">Consumo mensal</div></div>
-        <div class="tile"><div class="icon g">📈</div><div class="value">${num2.format(t.kwh / (p.days || 30))} kWh</div><div class="label">Média diária</div></div>
-        <div class="tile"><div class="icon g">🔌</div><div class="value">${p.equipments.length}</div><div class="label">Aparelhos</div></div>
-        <div class="tile"><div class="icon">💰</div><div class="value">${brl.format(t.cost / (p.days || 30))}</div><div class="label">Custo diário</div></div>
+        <div class="tile"><div class="icon">${icon("bolt")}</div><div class="value">${num2.format(t.kwh)} kWh</div><div class="label">Consumo mensal</div></div>
+        <div class="tile"><div class="icon g">${icon("trending_up")}</div><div class="value">${num2.format(t.kwh / (p.days || 30))} kWh</div><div class="label">Média diária</div></div>
+        <div class="tile"><div class="icon g">${icon("electrical_services")}</div><div class="value">${p.equipments.length}</div><div class="label">Aparelhos</div></div>
+        <div class="tile"><div class="icon">${icon("payments")}</div><div class="value">${brl.format(t.cost / (p.days || 30))}</div><div class="label">Custo diário</div></div>
       </div>
 
       <div class="section-title"><span>Consumo por ambiente</span><button class="link-btn" data-goto="environments">Gerenciar ›</button></div>
@@ -312,7 +337,7 @@
       <div class="list">
         ${top.map((eq) => `
           <div class="item">
-            <div class="avatar g">🔌</div>
+            <div class="avatar g">${icon(iconFor(eq))}</div>
             <div class="grow">
               <div class="item-title ellipsis">${esc(eq.name)}</div>
               <div class="item-sub ellipsis">${esc(envName(p, eq.envId))}</div>
@@ -356,7 +381,7 @@
 
   function environmentsView(p) {
     if (!p.environments.length) {
-      return `<div class="card center"><div class="empty"><div class="circle">🏠</div><h2>Nenhum ambiente</h2><p>Crie cômodos ou setores para organizar os aparelhos.</p></div>
+      return `<div class="card center"><div class="empty"><div class="circle">${icon("meeting_room")}</div><h2>Nenhum ambiente</h2><p>Crie cômodos ou setores para organizar os aparelhos.</p></div>
         <button class="btn primary block" id="addEnv">Criar ambiente</button></div>`;
     }
     return `
@@ -365,13 +390,13 @@
           const list = p.equipments.filter((e) => e.envId === env.id);
           const kwh = list.reduce((a, e) => a + monthlyKwh(e), 0);
           return `<div class="item">
-            <div class="avatar">${env.icon || "🏠"}</div>
+            <div class="avatar">${icon(envIcon(env))}</div>
             <div class="grow clickable" data-env="${env.id}">
               <div class="item-title">${esc(env.name)}</div>
               <div class="item-sub">${list.length} aparelho${list.length === 1 ? "" : "s"} • ${num2.format(kwh)} kWh</div>
             </div>
             <div class="item-end green">${brl.format(kwh * p.tariff)}</div>
-            <button class="icon-btn" data-edit-env="${env.id}" aria-label="Editar">✎</button>
+            <button class="icon-btn" data-edit-env="${env.id}" aria-label="Editar">${icon("edit")}</button>
           </div>`;
         }).join("")}
       </div>
@@ -392,7 +417,7 @@
 
   function equipmentView(p) {
     if (!p.equipments.length) {
-      return `<div class="card center"><div class="empty"><div class="circle">🔌</div><h2>Nenhum aparelho</h2><p>Adicione aparelhos da biblioteca ou cadastre manualmente.</p></div>
+      return `<div class="card center"><div class="empty"><div class="circle">${icon("electrical_services")}</div><h2>Nenhum aparelho</h2><p>Adicione aparelhos da biblioteca ou cadastre manualmente.</p></div>
         <button class="btn primary block" id="addEq">Adicionar aparelho</button></div>`;
     }
     const sorted = [...p.equipments].sort((a, b) => monthlyKwh(b) - monthlyKwh(a));
@@ -400,7 +425,7 @@
       <div class="list">
         ${sorted.map((eq) => `
           <div class="item">
-            <div class="avatar g">${iconFor(eq)}</div>
+            <div class="avatar g">${icon(iconFor(eq))}</div>
             <div class="grow" data-eq="${eq.id}">
               <div class="item-title ellipsis">${esc(eq.name)}</div>
               <div class="item-sub">${esc(envName(p, eq.envId))} • ${eq.qty}x • ${fmtDuration((eq.hours || 0) * 60)}/dia</div>
@@ -411,19 +436,30 @@
       <button class="btn primary block" id="addEq">Adicionar aparelho</button>`;
   }
 
-  function iconFor(eq) {
-    const n = norm(eq.name);
-    if (n.includes("ar condicionado") || n.includes("climatiz")) return "❄️";
-    if (n.includes("geladeira") || n.includes("freezer")) return "🧊";
-    if (n.includes("micro") || n.includes("forno") || n.includes("fogao")) return "🔥";
-    if (n.includes("lampada") || n.includes("ilumin")) return "💡";
-    if (n.includes("tv") || n.includes("televisor") || n.includes("monitor")) return "📺";
-    if (n.includes("ventilador")) return "🌀";
-    if (n.includes("maquina de lavar") || n.includes("lava")) return "🧺";
-    if (n.includes("chuveiro")) return "🚿";
-    if (n.includes("computador") || n.includes("notebook")) return "💻";
-    if (n.includes("motor") || n.includes("bomba")) return "⚙️";
-    return "🔌";
+  function iconFor(item) {
+    const n = norm(item.name || item.type || "");
+    if (n.includes("ar condicionado") || n.includes("split") || n.includes("climatiz")) return "ac_unit";
+    if (n.includes("ventilador") || n.includes("exaustor")) return "air";
+    if (n.includes("geladeira") || n.includes("freezer") || n.includes("frigobar")) return "kitchen";
+    if (n.includes("micro") || n.includes("forno") || n.includes("fogao") || n.includes("air fryer")) return "local_fire_department";
+    if (n.includes("lampada") || n.includes("ilumin") || n.includes("refletor")) return "lightbulb";
+    if (n.includes("tv") || n.includes("televisor") || n.includes("monitor")) return "tv";
+    if (n.includes("maquina de lavar") || n.includes("lava") || n.includes("secadora")) return "local_laundry_service";
+    if (n.includes("chuveiro") || n.includes("torneira")) return "bathtub";
+    if (n.includes("computador") || n.includes("notebook")) return "computer";
+    if (n.includes("motor") || n.includes("bomba") || n.includes("compressor")) return "engineering";
+    if (n.includes("cafeteira") || n.includes("chaleira")) return "coffee";
+    if (n.includes("liquidificador") || n.includes("batedeira") || n.includes("panela")) return "restaurant";
+    if (n.includes("roteador")) return "router";
+    if (n.includes("impressora")) return "print";
+    if (n.includes("caixa de som") || n.includes("som")) return "speaker";
+    if (n.includes("videogame")) return "sports_esports";
+    if (n.includes("carregador") || n.includes("wallbox")) return "power";
+    if (n.includes("aspirador")) return "cleaning_services";
+    if (n.includes("ferro")) return "checkroom";
+    if (n.includes("umidificador") || n.includes("climatizador")) return "water_drop";
+    if (n.includes("aquecedor") || n.includes("almofada")) return "thermostat";
+    return "bolt";
   }
 
   function bindEquipment(p) {
@@ -435,7 +471,7 @@
 
   function simulateView(p, t) {
     if (!p.equipments.length) {
-      return `<div class="card center"><div class="empty"><div class="circle">📊</div><h2>Nada para simular</h2><p>Adicione aparelhos para comparar cenários.</p></div></div>`;
+      return `<div class="card center"><div class="empty"><div class="circle">${icon("trending_up")}</div><h2>Nada para simular</h2><p>Adicione aparelhos para comparar cenários.</p></div></div>`;
     }
     const sim = p.equipments.map((eq) => ({ ...eq, simHours: eq.hours || 0 }));
     const simKwh = sim.reduce((a, eq) => a + monthlyKwh(eq), 0);
@@ -467,7 +503,7 @@
         ${sim.map((eq) => `
           <div class="item" style="display:block">
             <div class="row">
-              <div class="avatar g">${iconFor(eq)}</div>
+              <div class="avatar g">${icon(iconFor(eq))}</div>
               <div class="grow"><div class="item-title ellipsis">${esc(eq.name)}</div>
                 <div class="item-sub">${eq.qty}x • ${num2.format(eq.powerW)} W</div></div>
               <div class="item-end green">${num2.format(monthlyKwh(eq))} kWh</div>
@@ -541,7 +577,7 @@
     return `
       <div class="card">
         <div class="row">
-          <div class="avatar">${p.type === "INDUSTRIAL" ? "🏭" : p.type === "COMMERCIAL" ? "🏪" : p.type === "RURAL" ? "🚜" : p.type === "CONSTRUCTION" ? "🛠️" : "🏠"}</div>
+          <div class="avatar">${icon(typeIcon(p.type))}</div>
           <div class="grow"><div class="item-title">${esc(p.name)}</div><div class="item-sub">${typeLabel(p.type)}</div></div>
           <button class="btn sm ghost" id="editProject">Editar</button>
         </div>
@@ -555,20 +591,28 @@
 
       <div class="section-title"><span>Relatório</span></div>
       <div class="list">
-        <button class="item" id="copySummary"><div class="avatar">📋</div><div class="grow" style="text-align:left"><div class="item-title">Copiar resumo</div><div class="item-sub">Texto com emojis para WhatsApp</div></div><span class="chev">›</span></button>
-        <button class="item" id="printPdf"><div class="avatar">🖨️</div><div class="grow" style="text-align:left"><div class="item-title">Salvar em PDF</div><div class="item-sub">Abre a impressão do navegador</div></div><span class="chev">›</span></button>
-        <button class="item" id="exportCsv"><div class="avatar">📄</div><div class="grow" style="text-align:left"><div class="item-title">Exportar CSV</div><div class="item-sub">Planilha com todos os aparelhos</div></div><span class="chev">›</span></button>
+        <button class="item" id="copySummary"><div class="avatar">${icon("content_copy")}</div><div class="grow" style="text-align:left"><div class="item-title">Copiar resumo</div><div class="item-sub">Texto com emojis para WhatsApp</div></div><span class="chev">›</span></button>
+        <button class="item" id="printPdf"><div class="avatar">${icon("picture_as_pdf")}</div><div class="grow" style="text-align:left"><div class="item-title">Salvar em PDF</div><div class="item-sub">Abre a impressão do navegador</div></div><span class="chev">›</span></button>
+        <button class="item" id="exportCsv"><div class="avatar">${icon("description")}</div><div class="grow" style="text-align:left"><div class="item-title">Exportar CSV</div><div class="item-sub">Planilha com todos os aparelhos</div></div><span class="chev">›</span></button>
       </div>
+
+      ${isStandalone() ? "" : `
+      <div class="section-title"><span>Aplicativo</span></div>
+      <div class="list">
+        <button class="item" id="installApp"><div class="avatar">${icon("download")}</div><div class="grow" style="text-align:left"><div class="item-title">Instalar aplicativo</div><div class="item-sub">Adicionar à tela inicial e usar offline</div></div><span class="chev">›</span></button>
+      </div>`}
 
       <div class="section-title"><span>Dados</span></div>
       <div class="list">
-        <button class="item" id="switchProject"><div class="avatar">🔄</div><div class="grow" style="text-align:left"><div class="item-title">Trocar de instalação</div><div class="item-sub">${state.projects.length} cadastrada(s)</div></div><span class="chev">›</span></button>
-        <button class="item" id="wipe"><div class="avatar" style="background:rgba(255,92,92,.12);color:var(--red)">🗑️</div><div class="grow" style="text-align:left"><div class="item-title">Apagar dados</div><div class="item-sub">Remove instalações deste navegador</div></div><span class="chev">›</span></button>
+        <button class="item" id="switchProject"><div class="avatar">${icon("refresh")}</div><div class="grow" style="text-align:left"><div class="item-title">Trocar de instalação</div><div class="item-sub">${state.projects.length} cadastrada(s)</div></div><span class="chev">›</span></button>
+        <button class="item" id="wipe"><div class="avatar" style="background:rgba(255,92,92,.12);color:var(--red)">${icon("delete")}</div><div class="grow" style="text-align:left"><div class="item-title">Apagar dados</div><div class="item-sub">Remove instalações deste navegador</div></div><span class="chev">›</span></button>
       </div>
       <p class="tiny muted center" style="margin:8px 0">Consumo Consciente • versão web • funciona offline</p>`;
   }
 
   const typeLabel = (t) => (TYPES.find(([k]) => k === t)?.[1]) || t;
+  const typeIcon = (t) => t === "INDUSTRIAL" ? "factory" : t === "COMMERCIAL" ? "storefront"
+    : t === "RURAL" ? "agriculture" : t === "CONSTRUCTION" ? "construction" : "home";
 
   function bindSettings(p) {
     $("#editProject")?.addEventListener("click", () => projectModal(p));
@@ -576,6 +620,7 @@
     $("#printPdf")?.addEventListener("click", () => printReport(p));
     $("#exportCsv")?.addEventListener("click", () => exportCsv(p));
     $("#switchProject")?.addEventListener("click", () => projectsModal());
+    $("#installApp")?.addEventListener("click", promptInstall);
     $("#wipe")?.addEventListener("click", () => {
       if (confirm("Apagar todas as instalações deste navegador?")) {
         state = { projects: [], currentId: null };
@@ -639,7 +684,7 @@
       <div class="list">
         ${state.projects.map((p) => `
           <button class="item" data-pick="${p.id}">
-            <div class="avatar">🏠</div>
+            <div class="avatar">${icon(typeIcon(p.type))}</div>
             <div class="grow" style="text-align:left"><div class="item-title">${esc(p.name)}</div><div class="item-sub">${typeLabel(p.type)} • ${p.equipments.length} aparelhos</div></div>
             ${p.id === state.currentId ? '<span class="chip active">Atual</span>' : ""}
           </button>`).join("")}
@@ -657,31 +702,31 @@
   }
 
   function environmentModal(p, existing) {
-    const env = existing || { name: "", icon: "🏠" };
-    const icons = ["🏠", "🛏️", "🛋️", "🍳", "🚿", "🧺", "🚗", "🏭", "🏪", "🌾", "🛠️", "🏢"];
+    const env = existing || { name: "", icon: "meeting_room" };
+    const currentIcon = envIcon(env);
     openModal(`
       <h2>${existing ? "Editar ambiente" : "Novo ambiente"}</h2>
       <p class="sub">Cômodo ou setor da instalação.</p>
       <div class="field" style="margin-bottom:12px"><label>Nome</label><input id="eName" value="${esc(env.name)}" placeholder="Quarto 01"></div>
       <label class="tiny muted">Ícone</label>
       <div class="chips" id="iconRow" style="margin:8px 0 16px">
-        ${icons.map((i) => `<button class="chip ${i === env.icon ? "active" : ""}" data-icon="${i}" style="font-size:18px">${i}</button>`).join("")}
+        ${ENV_ICONS.map((name) => `<button class="chip ${name === currentIcon ? "active" : ""}" data-icon="${name}" aria-label="${name}">${icon(name)}</button>`).join("")}
       </div>
       <div class="sheet-actions">
         ${existing ? '<button class="btn danger" id="delEnv">Excluir</button>' : ""}
         <button class="btn primary" id="saveEnv">Salvar</button>
       </div>
     `, (sheet) => {
-      let icon = env.icon;
+      let selectedIcon = currentIcon;
       sheet.querySelectorAll("[data-icon]").forEach((b) => b.addEventListener("click", () => {
-        icon = b.dataset.icon;
+        selectedIcon = b.dataset.icon;
         sheet.querySelectorAll("[data-icon]").forEach((x) => x.classList.toggle("active", x === b));
       }));
       sheet.querySelector("#saveEnv").addEventListener("click", () => {
         const name = sheet.querySelector("#eName").value.trim();
         if (!name) return;
-        if (existing) Object.assign(existing, { name, icon });
-        else p.environments.push({ id: uid(), name, icon });
+        if (existing) Object.assign(existing, { name, icon: selectedIcon });
+        else p.environments.push({ id: uid(), name, icon: selectedIcon });
         save(); closeModal(); render();
       });
       sheet.querySelector("#delEnv")?.addEventListener("click", () => {
@@ -711,7 +756,7 @@
         const items = searchCatalog(q.value, 50);
         results.innerHTML = items.length ? items.map((item, i) => `
           <button class="result" data-i="${catalog.indexOf(item)}">
-            <div class="avatar">${iconFor(item)}</div>
+            <div class="avatar">${icon(iconFor(item))}</div>
             <div class="grow"><b class="ellipsis">${esc(item.type)}</b><small>${esc(item.variant || item.category)} • ${num2.format(item.power)} W</small></div>
           </button>`).join("") : '<p class="muted small center" style="padding:20px">Nenhum resultado.</p>';
         results.querySelectorAll("[data-i]").forEach((b) => b.addEventListener("click", () => {
@@ -733,6 +778,19 @@
       factor: fromCatalog.factor ?? 1, monthlyKwh: null
     } : { name: "", category: "Outros", powerW: 100, qty: 1, hours: 8, days: p.days, factor: 1, monthlyKwh: null });
     const envOptions = p.environments.map((e) => `<option value="${e.id}" ${existing?.envId === e.id ? "selected" : ""}>${esc(e.name)}</option>`).join("");
+    const hasWeekly = Array.isArray(base.weeklyMinutes) && base.weeklyMinutes.length === 7;
+    const weekLabels = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
+    const dailyMinutes = ((base.hours || 0) * 60).toFixed(1);
+    const weeklyRows = weekLabels.map((label, index) => {
+      const value = hasWeekly ? base.weeklyMinutes[index] : dailyMinutes;
+      return `<div class="row" style="margin-bottom:6px">
+        <span class="tiny muted" style="width:34px">${label}</span>
+        <input class="wk" data-i="${index}" type="number" min="0" max="1440" step="0.1" value="${value}"
+          style="flex:1;background:#101013;border:1px solid var(--line);border-radius:10px;padding:8px">
+        <span class="tiny muted" style="width:70px;text-align:right" data-wk-label="${index}">${fmtDuration(Number(value))}</span>
+      </div>`;
+    }).join("");
+
     openModal(`
       <h2>${existing ? "Editar aparelho" : "Novo aparelho"}</h2>
       <p class="sub">${fromCatalog?.estimated ? "Potência estimada: confirme na etiqueta." : "Informe os dados de uso."}</p>
@@ -746,10 +804,20 @@
         <div class="field"><label>Quantidade</label><input id="eqQty" type="number" min="1" value="${base.qty}"></div>
       </div>
       <div class="grid2" style="margin-bottom:10px">
-        <div class="field"><label>Minutos por dia</label><input id="eqMinutes" type="number" min="0" max="1440" step="0.1" value="${((base.hours || 0) * 60).toFixed(1)}"></div>
+        <div class="field"><label>Minutos por dia</label><input id="eqMinutes" type="number" min="0" max="1440" step="0.1" value="${dailyMinutes}" ${hasWeekly ? "disabled" : ""}></div>
         <div class="field"><label>Dias no mês</label><input id="eqDays" type="number" min="1" max="31" value="${base.days}"></div>
       </div>
-      <div class="field" style="margin-bottom:6px"><label>Fator médio de uso (0–1)</label><input id="eqFactor" type="number" min="0" max="1" step="0.05" value="${base.factor}"></div>
+
+      <label class="row spread" style="margin:4px 0 8px">
+        <span>
+          <span class="item-title" style="font-size:14px">Rotina por dia da semana</span>
+          <span class="item-sub" style="display:block">Ex.: 3h na terça, 4h no domingo, 0h no sábado.</span>
+        </span>
+        <input id="eqWeekly" type="checkbox" ${hasWeekly ? "checked" : ""} style="width:20px;height:20px">
+      </label>
+      <div id="weeklyBox" ${hasWeekly ? "" : "hidden"} style="margin-bottom:10px">${weeklyRows}</div>
+
+      <div class="field" style="margin-bottom:6px"><label>Fator médio de uso (0–1)</label><input id="eqFactor" type="number" min="0" max="1" step="0.05" value="${base.factor}" ${hasWeekly ? "disabled" : ""}></div>
       <p class="hint" id="eqPreview"></p>
       <div class="sheet-actions">
         ${existing ? '<button class="btn danger" id="delEq">Excluir</button>' : ""}
@@ -757,31 +825,62 @@
       </div>
     `, (sheet) => {
       const preview = sheet.querySelector("#eqPreview");
+      const weeklyToggle = sheet.querySelector("#eqWeekly");
+      const weeklyBox = sheet.querySelector("#weeklyBox");
+      const dailyInput = sheet.querySelector("#eqMinutes");
+      const factorInput = sheet.querySelector("#eqFactor");
+
+      const weeklyValues = () => [...sheet.querySelectorAll(".wk")].map((i) => Math.max(0, Math.min(1440, parseFloat(i.value) || 0)));
+
       const refresh = () => {
         const power = parseFloat(sheet.querySelector("#eqPower").value) || 0;
-        const qty = parseInt(sheet.querySelector("#eqQty").value) || 1;
-        const minutes = parseFloat(sheet.querySelector("#eqMinutes").value) || 0;
+        const qty = Math.max(1, parseInt(sheet.querySelector("#eqQty").value) || 1);
         const days = parseInt(sheet.querySelector("#eqDays").value) || 30;
-        const factor = Math.min(1, Math.max(0, parseFloat(sheet.querySelector("#eqFactor").value) || 1));
-        const kwh = (power / 1000) * qty * (minutes / 60) * days * factor;
-        preview.textContent = `${num2.format(kwh)} kWh/mês • ${brl.format(kwh * p.tariff)} • ${fmtDuration(minutes)}/dia`;
+        let kwh;
+        if (weeklyToggle.checked) {
+          const total = weeklyValues().reduce((a, b) => a + b, 0);
+          kwh = (power / 1000) * (total / 60) * (days / 7) * qty;
+          preview.textContent = `${num2.format(kwh)} kWh/mês • ${brl.format(kwh * p.tariff)} • ${fmtDuration(total)}/semana`;
+        } else {
+          const minutes = parseFloat(dailyInput.value) || 0;
+          const factor = Math.min(1, Math.max(0, parseFloat(factorInput.value) || 1));
+          kwh = (power / 1000) * qty * (minutes / 60) * days * factor;
+          preview.textContent = `${num2.format(kwh)} kWh/mês • ${brl.format(kwh * p.tariff)} • ${fmtDuration(minutes)}/dia`;
+        }
+        sheet.querySelectorAll(".wk").forEach((input, index) => {
+          const label = sheet.querySelector(`[data-wk-label="${index}"]`);
+          if (label) label.textContent = fmtDuration(parseFloat(input.value) || 0);
+        });
       };
+
+      weeklyToggle.addEventListener("change", () => {
+        weeklyBox.hidden = !weeklyToggle.checked;
+        dailyInput.disabled = weeklyToggle.checked;
+        factorInput.disabled = weeklyToggle.checked;
+        refresh();
+      });
+
       sheet.querySelectorAll("input").forEach((i) => i.addEventListener("input", refresh));
       refresh();
+
       sheet.querySelector("#saveEq").addEventListener("click", () => {
         const envId = sheet.querySelector("#eqEnv").value || p.environments[0]?.id;
         if (!envId) { toast("Crie um ambiente primeiro."); return; }
+        const weekly = weeklyToggle.checked ? weeklyValues() : null;
+        const weeklyTotal = weekly ? weekly.reduce((a, b) => a + b, 0) : 0;
         const data = {
           name: sheet.querySelector("#eqName").value.trim() || "Aparelho",
           category: sheet.querySelector("#eqCat").value.trim() || "Outros",
           envId,
           powerW: parseFloat(sheet.querySelector("#eqPower").value) || 0,
           qty: Math.max(1, parseInt(sheet.querySelector("#eqQty").value) || 1),
-          hours: (parseFloat(sheet.querySelector("#eqMinutes").value) || 0) / 60,
+          hours: weekly ? (weeklyTotal / 7 / 60) : ((parseFloat(dailyInput.value) || 0) / 60),
           days: Math.min(31, Math.max(1, parseInt(sheet.querySelector("#eqDays").value) || 30)),
           factor: Math.min(1, Math.max(0, parseFloat(sheet.querySelector("#eqFactor").value) || 1)),
-          monthlyKwh: null
+          monthlyKwh: null,
+          weeklyMinutes: weekly
         };
+        if (!weekly) delete data.weeklyMinutes;
         if (existing) Object.assign(existing, data);
         else p.equipments.push({ id: uid(), ...data });
         save(); closeModal(); render();
@@ -860,26 +959,54 @@
   function printReport(p) {
     const t = totals(p);
     const envs = byEnvironment(p);
+    const maxEnv = envs[0]?.kwh || 1;
     const top = [...p.equipments].sort((a, b) => monthlyKwh(b) - monthlyKwh(a));
+    const date = new Date().toLocaleString("pt-BR");
     $("#printArea").innerHTML = `
-      <div class="p-head">
-        <h1>Consumo Consciente</h1>
-        <p>${esc(p.name)} • ${typeLabel(p.type)} • ${new Date().toLocaleString("pt-BR")}</p>
+      <div class="p-band">
+        <div class="p-mark">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M13 2 4.5 13.5H11l-1 8.5L19.5 10H13z"/></svg>
+        </div>
+        <div>
+          <h1>Consumo Consciente</h1>
+          <p>Relatório de consumo de energia</p>
+        </div>
+        <div class="p-date">Gerado em<br>${date}</div>
       </div>
+
+      <div class="p-project">PROJETO<b>${esc(p.name)}</b></div>
+      <div class="p-sub">${typeLabel(p.type)} • ${p.days} dias/mês${p.utility ? ` • ${esc(p.utility)}` : ""}${p.state ? ` • ${UF_NAMES[p.state] || p.state}` : ""}</div>
+
       <div class="p-kpi">
-        <div><span>Custo mensal</span><b>${brl.format(t.cost)}</b></div>
-        <div><span>Consumo</span><b>${num2.format(t.kwh)} kWh</b></div>
-        <div><span>Tarifa</span><b>${brl.format(p.tariff)}/kWh</b></div>
+        <div><span>CUSTO MENSAL</span><b>${brl.format(t.cost)}</b></div>
+        <div><span>CONSUMO MENSAL</span><b>${num2.format(t.kwh)} kWh</b></div>
+        <div><span>TARIFA</span><b>${brl.format(p.tariff)}/kWh</b></div>
       </div>
+
       <h3>Consumo por ambiente</h3>
-      <table><thead><tr><th>Ambiente</th><th>kWh</th><th>Custo</th></tr></thead><tbody>
-        ${envs.map(({ env, kwh }) => `<tr><td>${esc(env.name)}</td><td>${num2.format(kwh)}</td><td>${brl.format(kwh * p.tariff)}</td></tr>`).join("")}
+      <table><thead><tr><th>Ambiente</th><th>Participação</th><th class="num">kWh</th><th class="num">Custo</th></tr></thead><tbody>
+        ${envs.map(({ env, kwh }) => `<tr>
+          <td>${esc(env.name)}</td>
+          <td><div class="p-bar"><i style="width:${Math.max(2, (kwh / maxEnv) * 100)}%"></i></div></td>
+          <td class="num">${num2.format(kwh)}</td>
+          <td class="num">${brl.format(kwh * p.tariff)}</td>
+        </tr>`).join("")}
       </tbody></table>
+
       <h3>Aparelhos</h3>
-      <table><thead><tr><th>Aparelho</th><th>Ambiente</th><th>W</th><th>Horas/dia</th><th>kWh</th><th>Custo</th></tr></thead><tbody>
-        ${top.map((eq) => `<tr><td>${esc(eq.name)}</td><td>${esc(envName(p, eq.envId))}</td><td>${num2.format(eq.powerW)}</td><td>${num1.format((eq.hours || 0))}</td><td>${num2.format(monthlyKwh(eq))}</td><td>${brl.format(costOf(eq, p))}</td></tr>`).join("")}
+      <table><thead><tr><th>Aparelho</th><th>Ambiente</th><th class="num">W</th><th class="num">Horas/dia</th><th class="num">kWh</th><th class="num">Custo</th></tr></thead><tbody>
+        ${top.map((eq) => `<tr>
+          <td>${esc(eq.name)}</td>
+          <td>${esc(envName(p, eq.envId))}</td>
+          <td class="num">${num2.format(eq.powerW)}</td>
+          <td class="num">${num1.format((eq.hours || 0))}</td>
+          <td class="num">${num2.format(monthlyKwh(eq))}</td>
+          <td class="num">${brl.format(costOf(eq, p))}</td>
+        </tr>`).join("")}
       </tbody></table>
-      <p class="p-note">Valores estimados a partir dos dados informados. Confirme a potência na etiqueta do aparelho.</p>`;
+
+      <p class="p-note">Valores estimados a partir dos dados informados. Confirme a potência na etiqueta do aparelho.
+      Bandeiras tarifárias, impostos e consumo real variam por distribuidora.</p>`;
     window.print();
   }
 
@@ -909,28 +1036,67 @@
     e.preventDefault();
     deferredPrompt = e;
     installBtn.hidden = false;
+    showInstallBanner();
   });
 
-  installBtn.addEventListener("click", async () => {
+  window.addEventListener("appinstalled", () => {
+    deferredPrompt = null;
+    installBtn.hidden = true;
+    document.querySelector(".install-banner")?.remove();
+    toast("Aplicativo instalado.");
+  });
+
+  function isStandalone() {
+    return matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+  }
+
+  function showInstallBanner() {
+    if (isStandalone() || document.querySelector(".install-banner")) return;
+    const banner = document.createElement("div");
+    banner.className = "install-banner";
+    banner.innerHTML = `
+      <div class="text"><b>Instalar aplicativo</b><small>Fica na tela inicial e abre offline.</small></div>
+      <button class="btn primary" id="bannerInstall">Instalar</button>
+      <button class="icon-btn" id="bannerClose" aria-label="Fechar">${icon("arrow_back")}</button>`;
+    document.body.appendChild(banner);
+    banner.querySelector("#bannerInstall").addEventListener("click", promptInstall);
+    banner.querySelector("#bannerClose").addEventListener("click", () => banner.remove());
+  }
+
+  async function promptInstall() {
     if (deferredPrompt) {
       deferredPrompt.prompt();
-      await deferredPrompt.userChoice;
+      const choice = await deferredPrompt.userChoice;
       deferredPrompt = null;
-      installBtn.hidden = true;
-    } else {
-      openModal(`
-        <h2>Instalar no celular</h2>
-        <p class="sub">Adicione à tela inicial para abrir como aplicativo.</p>
-        <p class="small muted">No Android (Chrome): menu ⋮ → <b>Instalar aplicativo</b>.<br>
-        No iPhone (Safari): botão Compartilhar → <b>Adicionar à Tela de Início</b>.</p>
-        <div class="sheet-actions"><button class="btn primary" data-close>Entendi</button></div>`);
+      if (choice.outcome === "accepted") {
+        installBtn.hidden = true;
+        document.querySelector(".install-banner")?.remove();
+        toast("Instalando aplicativo…");
+      }
+      return;
     }
-  });
+    if (isStandalone()) {
+      toast("O aplicativo já está instalado.");
+      return;
+    }
+    openModal(`
+      <h2>Instalar aplicativo</h2>
+      <p class="sub">O navegador atual não mostrou a instalação automática.</p>
+      <p class="small muted">No Android, use o menu ⋮ do Chrome e toque em <b>Instalar aplicativo</b>.
+      No iPhone, toque em Compartilhar → <b>Adicionar à Tela de Início</b>.</p>
+      <div class="sheet-actions"><button class="btn primary" data-close>Entendi</button></div>`);
+  }
+
+  installBtn.addEventListener("click", promptInstall);
 
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => {
       navigator.serviceWorker.register("sw.js", { scope: "./" }).catch(() => {});
     });
+  }
+
+  if (new URLSearchParams(location.search).get("install") === "1") {
+    showInstallBanner();
   }
 
   render();

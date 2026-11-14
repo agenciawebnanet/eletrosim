@@ -1,4 +1,4 @@
-const CACHE = "consumo-consciente-v6";
+const CACHE = "consumo-consciente-v8";
 const SHELL = [
   "./",
   "./index.html",
@@ -6,6 +6,7 @@ const SHELL = [
   "./app.js",
   "./manifest.webmanifest",
   "./catalogo.json",
+  "./assets/icons.svg",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
   "./icons/maskable-192.png",
