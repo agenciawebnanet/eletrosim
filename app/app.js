@@ -45,6 +45,7 @@
   let catalogError = false;
   let tab = "home";
   let envFilter = null;
+  let simOverrides = new Map();
   let deferredPrompt = null;
 
   // ---------------------------------------------------------------- util
@@ -139,6 +140,21 @@
     return (eq.powerW / 1000) * (eq.qty || 1) * hours * (eq.days || 30) * (eq.factor ?? 1);
   }
   const costOf = (eq, p) => monthlyKwh(eq) * (p?.tariff || 0);
+
+  /** Minutos/dia equivalentes (média semanal quando há rotina por dia). */
+  function baseMinutes(eq) {
+    if (Array.isArray(eq.weeklyMinutes) && eq.weeklyMinutes.length === 7) {
+      const total = eq.weeklyMinutes.reduce((a, b) => a + (Number(b) || 0), 0);
+      return total > 0 ? total / 7 : (eq.hours || 0) * 60;
+    }
+    return (eq.hours || 0) * 60;
+  }
+
+  /** Consumo para um valor de minutos informado na simulação (não altera o cadastro). */
+  function simKwhOf(eq, minutes) {
+    const factor = Array.isArray(eq.weeklyMinutes) ? 1 : (eq.factor ?? 1);
+    return (eq.powerW / 1000) * (eq.qty || 1) * ((minutes || 0) / 60) * (eq.days || 30) * factor;
+  }
 
   function totals(p) {
     const kwh = p.equipments.reduce((acc, eq) => acc + monthlyKwh(eq), 0);
@@ -498,8 +514,11 @@
     if (!p.equipments.length) {
       return `<div class="card center"><div class="empty"><div class="circle">${icon("trending_up")}</div><h2>Nada para simular</h2><p>Adicione aparelhos para comparar cenários.</p></div></div>`;
     }
-    const sim = p.equipments.map((eq) => ({ ...eq, simHours: eq.hours || 0 }));
-    const simKwh = sim.reduce((a, eq) => a + monthlyKwh(eq), 0);
+    const sim = p.equipments.map((eq) => ({
+      ...eq,
+      simMinutes: simOverrides.has(eq.id) ? simOverrides.get(eq.id) : baseMinutes(eq)
+    }));
+    const simKwh = sim.reduce((a, eq) => a + simKwhOf(eq, eq.simMinutes), 0);
     const simCost = simKwh * p.tariff;
     const saving = t.cost - simCost;
     const pct = t.cost > 0 ? (saving / t.cost) * 100 : 0;
@@ -531,38 +550,34 @@
               <div class="avatar g">${icon(iconFor(eq))}</div>
               <div class="grow"><div class="item-title ellipsis">${esc(eq.name)}</div>
                 <div class="item-sub">${eq.qty}x • ${num2.format(eq.powerW)} W</div></div>
-              <div class="item-end green">${num2.format(monthlyKwh(eq))} kWh</div>
+              <div class="item-end green" data-sim-kwh="${eq.id}">${num2.format(simKwhOf(eq, eq.simMinutes))} kWh</div>
             </div>
             <div class="row" style="margin-top:10px">
               <span class="tiny muted" style="width:82px">Minutos/dia</span>
-              <input type="number" min="0" max="1440" step="0.1" value="${((eq.hours || 0) * 60).toFixed(1)}"
+              <input type="number" min="0" max="1440" step="0.1" value="${eq.simMinutes.toFixed(1)}"
                      data-sim="${eq.id}" style="flex:1;background:#101013;border:1px solid var(--line);border-radius:10px;padding:9px">
-              <span class="tiny muted" style="width:76px;text-align:right">${fmtDuration((eq.hours || 0) * 60)}</span>
+              <span class="tiny muted" style="width:76px;text-align:right" data-sim-label="${eq.id}">${fmtDuration(eq.simMinutes)}</span>
             </div>
           </div>`).join("")}
       </div>`;
   }
 
   function bindSimulate(p) {
-    const baseline = new Map(p.equipments.map((eq) => [eq.id, eq.hours || 0]));
-
     view.querySelectorAll("[data-sim]").forEach((input) => input.addEventListener("input", () => {
-      const eq = p.equipments.find((x) => x.id === input.dataset.sim);
+      const id = input.dataset.sim;
+      const eq = p.equipments.find((x) => x.id === id);
       if (!eq) return;
-      eq.hours = Math.max(0, Math.min(1440, parseFloat(input.value) || 0)) / 60;
-      save();
+      const minutes = Math.max(0, Math.min(1440, parseFloat(input.value) || 0));
+      simOverrides.set(id, minutes);
 
       const total = totals(p);
-      const originalKwh = p.equipments.reduce((acc, item) => {
-        const baseHours = baseline.has(item.id) ? baseline.get(item.id) : (item.hours || 0);
-        if (item.monthlyKwh != null) return acc + item.monthlyKwh * (item.qty || 1);
-        return acc + (item.powerW / 1000) * (item.qty || 1) * baseHours * (item.days || 30) * (item.factor ?? 1);
+      const simKwh = p.equipments.reduce((acc, item) => {
+        const value = simOverrides.has(item.id) ? simOverrides.get(item.id) : baseMinutes(item);
+        return acc + simKwhOf(item, value);
       }, 0);
-      const originalCost = originalKwh * p.tariff;
-      const simKwh = p.equipments.reduce((a, e) => a + monthlyKwh(e), 0);
       const simCost = simKwh * p.tariff;
-      const saving = originalCost - simCost;
-      const pct = originalCost > 0 ? (saving / originalCost) * 100 : 0;
+      const saving = total.cost - simCost;
+      const pct = total.cost > 0 ? (saving / total.cost) * 100 : 0;
       const positive = saving > 0.005;
 
       const label = document.getElementById("simLabel");
@@ -574,7 +589,7 @@
 
       if (label) label.textContent = positive ? "Economia potencial" : "Custo atual";
       if (amount) {
-        amount.textContent = brl.format(positive ? saving : originalCost);
+        amount.textContent = brl.format(positive ? saving : total.cost);
         amount.style.color = positive ? "var(--green)" : "var(--text)";
       }
       if (sub) sub.textContent = positive ? `${num1.format(pct)}% menos consumo` : "por mês, com o uso atual";
@@ -583,16 +598,16 @@
         chip.textContent = `−${num1.format(pct)}%`;
       }
       if (now) now.textContent = `${num2.format(simKwh)} kWh`;
-      if (bar) bar.style.width = `${originalKwh > 0 ? Math.max(2, (simKwh / originalKwh) * 100) : 0}%`;
+      if (bar) bar.style.width = `${total.kwh > 0 ? Math.max(2, (simKwh / total.kwh) * 100) : 0}%`;
 
-      const row = input.closest(".item");
-      const rowEnd = row?.querySelector(".item-end");
-      if (rowEnd) rowEnd.textContent = `${num2.format(monthlyKwh(eq))} kWh`;
+      const rowKwh = document.querySelector(`[data-sim-kwh="${id}"]`);
+      if (rowKwh) rowKwh.textContent = `${num2.format(simKwhOf(eq, minutes))} kWh`;
+      const rowLabel = document.querySelector(`[data-sim-label="${id}"]`);
+      if (rowLabel) rowLabel.textContent = fmtDuration(minutes);
     }));
 
     $("#resetSim")?.addEventListener("click", () => {
-      p.equipments.forEach((eq) => { if (baseline.has(eq.id)) eq.hours = baseline.get(eq.id); });
-      save();
+      simOverrides.clear();
       render();
       toast("Cenário restaurado.");
     });
@@ -718,6 +733,8 @@
     `, (sheet) => {
       sheet.querySelectorAll("[data-pick]").forEach((b) => b.addEventListener("click", () => {
         state.currentId = b.dataset.pick;
+        envFilter = null;
+        simOverrides.clear();
         save();
         closeModal();
         render();
@@ -911,11 +928,13 @@
         if (!weekly) delete data.weeklyMinutes;
         if (existing) Object.assign(existing, data);
         else p.equipments.push({ id: uid(), ...data });
+        simOverrides.delete(existing?.id);
         save(); closeModal(); render();
       });
       sheet.querySelector("#delEq")?.addEventListener("click", () => {
         if (!confirm(`Excluir "${existing.name}"?`)) return;
         p.equipments = p.equipments.filter((e) => e.id !== existing.id);
+        simOverrides.delete(existing.id);
         save(); closeModal(); render();
       });
     });
@@ -1126,6 +1145,8 @@
   if (new URLSearchParams(location.search).get("install") === "1") {
     showInstallBanner();
   }
+
+  if (isStandalone()) installBtn.hidden = true;
 
   render();
   loadCatalog();
