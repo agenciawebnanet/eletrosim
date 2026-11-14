@@ -166,9 +166,12 @@
     const q = norm(query);
     if (!q) return catalog.slice(0, limit);
     const compact = q.replace(/ /g, "");
+    const tokens = q.split(" ").filter(Boolean);
     const out = [];
     for (const item of catalog) {
-      if (item.search.includes(q) || item.compact.includes(compact)) {
+      const direct = item.search.includes(q) || item.compact.includes(compact);
+      const everyWord = tokens.length > 1 && tokens.every((t) => item.compact.includes(t));
+      if (direct || everyWord) {
         out.push(item);
         if (out.length >= limit) break;
       }
