@@ -44,6 +44,7 @@
   let catalog = [];
   let catalogError = false;
   let tab = "home";
+  let envFilter = null;
   let deferredPrompt = null;
 
   // ---------------------------------------------------------------- util
@@ -249,6 +250,7 @@
 
   function render() {
     const p = project();
+    if (p && envFilter && !p.environments.some((e) => e.id === envFilter)) envFilter = null;
     document.querySelectorAll(".tab").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
 
     if (!p) {
@@ -396,6 +398,7 @@
               <div class="item-sub">${list.length} aparelho${list.length === 1 ? "" : "s"} • ${num2.format(kwh)} kWh</div>
             </div>
             <div class="item-end green">${brl.format(kwh * p.tariff)}</div>
+            <button class="icon-btn" data-add-env="${env.id}" aria-label="Adicionar aparelho">${icon("add")}</button>
             <button class="icon-btn" data-edit-env="${env.id}" aria-label="Editar">${icon("edit")}</button>
           </div>`;
         }).join("")}
@@ -409,19 +412,37 @@
       e.stopPropagation();
       environmentModal(p, p.environments.find((x) => x.id === b.dataset.editEnv));
     }));
+    view.querySelectorAll("[data-add-env]").forEach((b) => b.addEventListener("click", (e) => {
+      e.stopPropagation();
+      catalogModal(p, b.dataset.addEnv);
+    }));
     view.querySelectorAll("[data-env]").forEach((n) => n.addEventListener("click", () => {
+      envFilter = n.dataset.env;
       tab = "equipment";
       render();
     }));
   }
 
   function equipmentView(p) {
-    if (!p.equipments.length) {
-      return `<div class="card center"><div class="empty"><div class="circle">${icon("electrical_services")}</div><h2>Nenhum aparelho</h2><p>Adicione aparelhos da biblioteca ou cadastre manualmente.</p></div>
-        <button class="btn primary block" id="addEq">Adicionar aparelho</button></div>`;
+    const filterEnv = envFilter ? p.environments.find((e) => e.id === envFilter) : null;
+    const list = p.equipments.filter((eq) => !filterEnv || eq.envId === filterEnv.id);
+    const sorted = [...list].sort((a, b) => monthlyKwh(b) - monthlyKwh(a));
+    const filterChips = p.environments.length > 1
+      ? `<div class="chips">
+          <button class="chip ${filterEnv ? "" : "active"}" data-filter="">Todos</button>
+          ${p.environments.map((e) => `<button class="chip ${filterEnv?.id === e.id ? "active" : ""}" data-filter="${e.id}">${esc(e.name)}</button>`).join("")}
+        </div>`
+      : "";
+    const addLabel = filterEnv ? `Adicionar em ${esc(filterEnv.name)}` : "Adicionar aparelho";
+
+    if (!sorted.length) {
+      return `${filterChips}
+        <div class="card center"><div class="empty"><div class="circle">${icon("electrical_services")}</div>
+        <h2>${filterEnv ? "Nenhum aparelho neste ambiente" : "Nenhum aparelho"}</h2>
+        <p>${filterEnv ? `Adicione o primeiro aparelho em ${esc(filterEnv.name)}.` : "Adicione aparelhos da biblioteca ou cadastre manualmente."}</p></div>
+        <button class="btn primary block" id="addEq">${addLabel}</button></div>`;
     }
-    const sorted = [...p.equipments].sort((a, b) => monthlyKwh(b) - monthlyKwh(a));
-    return `
+    return `${filterChips}
       <div class="list">
         ${sorted.map((eq) => `
           <div class="item">
@@ -433,7 +454,7 @@
             <div class="item-end">${num2.format(monthlyKwh(eq))} kWh<br><span class="green">${brl.format(costOf(eq, p))}</span></div>
           </div>`).join("")}
       </div>
-      <button class="btn primary block" id="addEq">Adicionar aparelho</button>`;
+      <button class="btn primary block" id="addEq">${addLabel}</button>`;
   }
 
   function iconFor(item) {
@@ -463,7 +484,11 @@
   }
 
   function bindEquipment(p) {
-    $("#addEq")?.addEventListener("click", () => catalogModal(p));
+    $("#addEq")?.addEventListener("click", () => catalogModal(p, envFilter));
+    view.querySelectorAll("[data-filter]").forEach((b) => b.addEventListener("click", () => {
+      envFilter = b.dataset.filter || null;
+      render();
+    }));
     view.querySelectorAll("[data-eq]").forEach((n) => n.addEventListener("click", () => {
       equipmentModal(p, p.equipments.find((x) => x.id === n.dataset.eq));
     }));
@@ -738,7 +763,7 @@
     });
   }
 
-  function catalogModal(p) {
+  function catalogModal(p, defaultEnvId = null) {
     openModal(`
       <h2>Adicionar aparelho</h2>
       <p class="sub">${catalogError ? "Biblioteca indisponível offline. Cadastre manualmente." : "Busque na biblioteca (4.998 itens)."}</p>
@@ -762,22 +787,25 @@
         results.querySelectorAll("[data-i]").forEach((b) => b.addEventListener("click", () => {
           const chosen = catalog[parseInt(b.dataset.i, 10)];
           closeModal();
-          equipmentModal(p, null, chosen);
+          equipmentModal(p, null, chosen, defaultEnvId);
         }));
       };
       q.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(paint, 120); });
       paint();
-      sheet.querySelector("#manual").addEventListener("click", () => { closeModal(); equipmentModal(p, null, null); });
+      sheet.querySelector("#manual").addEventListener("click", () => { closeModal(); equipmentModal(p, null, null, defaultEnvId); });
     });
   }
 
-  function equipmentModal(p, existing, fromCatalog) {
+  function equipmentModal(p, existing, fromCatalog, defaultEnvId = null) {
     const base = existing || (fromCatalog ? {
       name: fromCatalog.name, category: fromCatalog.category, powerW: fromCatalog.power || 100,
       qty: 1, hours: fromCatalog.hours || 1, days: fromCatalog.days || p.days,
       factor: fromCatalog.factor ?? 1, monthlyKwh: null
     } : { name: "", category: "Outros", powerW: 100, qty: 1, hours: 8, days: p.days, factor: 1, monthlyKwh: null });
-    const envOptions = p.environments.map((e) => `<option value="${e.id}" ${existing?.envId === e.id ? "selected" : ""}>${esc(e.name)}</option>`).join("");
+    const preselectedEnv = existing?.envId || defaultEnvId || p.environments[0]?.id;
+    const envOptions = p.environments
+      .map((e) => `<option value="${e.id}" ${preselectedEnv === e.id ? "selected" : ""}>${esc(e.name)}</option>`)
+      .join("");
     const hasWeekly = Array.isArray(base.weeklyMinutes) && base.weeklyMinutes.length === 7;
     const weekLabels = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
     const dailyMinutes = ((base.hours || 0) * 60).toFixed(1);
@@ -1023,7 +1051,7 @@
     if (e.target.id === "firstAction") {
       const p = project();
       if (!p) return;
-      if (p.environments.length) catalogModal(p);
+      if (p.environments.length) catalogModal(p, envFilter || p.environments[0]?.id);
       else environmentModal(p, null);
     }
   });
