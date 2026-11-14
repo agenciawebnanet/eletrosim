@@ -1,4 +1,4 @@
-const CACHE = "consumo-consciente-v4";
+const CACHE = "consumo-consciente-v6";
 const SHELL = [
   "./",
   "./index.html",

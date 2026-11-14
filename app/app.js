@@ -153,7 +153,12 @@
           voltage: row[9] || 0,
           estimated: row[11] === 1,
           search: norm(`${type} ${variant} ${category}`),
-          compact: norm(`${type} ${variant} ${category}`).replace(/ /g, "")
+          compact: norm(`${type} ${variant} ${category}`).replace(/ /g, ""),
+          typeNorm: norm(type),
+          typeCompact: norm(type).replace(/ /g, ""),
+          typeWords: norm(type).split(" ").filter(Boolean),
+          variantNorm: norm(variant),
+          variantWords: norm(variant).split(" ").filter(Boolean)
         };
       });
     } catch (e) {
@@ -167,16 +172,29 @@
     if (!q) return catalog.slice(0, limit);
     const compact = q.replace(/ /g, "");
     const tokens = q.split(" ").filter(Boolean);
-    const out = [];
+    const scored = [];
     for (const item of catalog) {
       const direct = item.search.includes(q) || item.compact.includes(compact);
       const everyWord = tokens.length > 1 && tokens.every((t) => item.compact.includes(t));
-      if (direct || everyWord) {
-        out.push(item);
-        if (out.length >= limit) break;
-      }
+      if (!direct && !everyWord) continue;
+
+      let score = 0;
+      if (item.typeNorm.includes(q)) score += 100;
+      if (item.typeCompact.includes(compact)) score += 80;
+      if (item.search.includes(q)) score += 60;
+      if (tokens.length > 1 && tokens.every((t) => item.typeCompact.includes(t))) score += 50;
+      if (tokens.length && item.typeNorm.startsWith(tokens[0])) score += 12;
+      tokens.forEach((t) => {
+        const inTypeWord = item.typeWords.some((w) => w.startsWith(t));
+        const inVariantWord = item.variantWords.some((w) => w.startsWith(t));
+        if (inTypeWord) score += 8;
+        else if (item.typeCompact.includes(t)) score += 2;
+        if (inVariantWord) score += 5;
+      });
+      scored.push({ item, score });
     }
-    return out;
+    scored.sort((a, b) => b.score - a.score);
+    return scored.slice(0, limit).map((x) => x.item);
   }
 
   // ---------------------------------------------------------------- modal
