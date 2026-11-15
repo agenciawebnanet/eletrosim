@@ -1,21 +1,21 @@
 # Site do Consumo Consciente
 
-Landing page com download do APK, publicada no Vercel.
+Landing page com download do APK. Publicada no Vercel.
 
 - Site: https://consumo-consciente-app.vercel.app
 - APK: https://consumo-consciente-app.vercel.app/consumo-consciente.apk
-- Link antigo (continua funcionando): https://eletrosim.vercel.app
-- Repositório do site: https://github.com/agenciawebnanet/eletrosim
-- Projeto Vercel: `eletrosim` (root directory `.`, deploy automático a cada push)
+- Repositório: https://github.com/agenciawebnanet/eletrosim
+- Projeto Vercel: `consumo-consciente` (deploy automático a cada push)
 
 ## Arquivos
 
 ```
 site/
-  index.html            pagina (HTML + CSS, sem dependencias)
-  vercel.json           Content-Type e nome do APK no download
+  index.html              pagina de apresentacao e download
+  vercel.json             Content-Type e nome do APK no download
   consumo-consciente.apk  APK publicado (nao versionado no repo do app)
-  assets/               captura usada no mockup
+  assets/                 captura usada no mockup
+  app/sw.js               encerra o PWA antigo instalado em navegadores
 ```
 
 ## Publicar nova versao do APK
@@ -26,13 +26,8 @@ Na pasta do app:
 .\publicar-site.ps1
 ```
 
-O script:
-
-1. pega o release `app/build/outputs/apk/release/app-release.apk` (ou o debug, ou `-ApkPath`);
-2. copia para `site/consumo-consciente.apk`;
-3. atualiza tamanho, versao e nome de download no `index.html` e no `vercel.json`;
-4. sincroniza `site` com o clone em `%LOCALAPPDATA%\eletrosim-site-repo`;
-5. faz commit e push, disparando o deploy automatico no Vercel.
+O script copia o release, atualiza tamanho/versao/nome do download e faz commit e
+push para o repositorio do site, disparando o deploy no Vercel.
 
 Opcoes: `-ApkPath "C:\caminho\app.apk"` e `-Message "texto do commit"`.
 
@@ -49,3 +44,9 @@ python -m http.server 8099
 cd site
 vercel --prod
 ```
+
+## Versao web (PWA)
+
+Foi removida. As URLs `/app` e `/app/*` redirecionam para a pagina inicial e o
+service worker publicado apenas limpa o cache e se desregistra em quem tinha o
+PWA instalado. O aplicativo disponivel agora e somente o APK.
