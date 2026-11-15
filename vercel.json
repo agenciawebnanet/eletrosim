@@ -2,6 +2,10 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "cleanUrls": true,
   "trailingSlash": true,
+  "redirects": [
+    { "source": "/app", "destination": "/", "permanent": true },
+    { "source": "/app/(.*)", "destination": "/", "permanent": true }
+  ],
   "headers": [
     {
       "source": "/consumo-consciente.apk",
@@ -18,20 +22,6 @@
           "key": "Cache-Control",
           "value": "public, max-age=0, must-revalidate"
         }
-      ]
-    },
-    {
-      "source": "/app/sw.js",
-      "headers": [
-        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" },
-        { "key": "Service-Worker-Allowed", "value": "/app/" }
-      ]
-    },
-    {
-      "source": "/app/manifest.webmanifest",
-      "headers": [
-        { "key": "Content-Type", "value": "application/manifest+json" },
-        { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }
       ]
     },
     {
